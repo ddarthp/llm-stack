@@ -64,6 +64,39 @@ def vdf_dump(pairs):
     return bytes(out)
 
 
+def steam_corriendo() -> bool:
+    """Steam reescribe shortcuts.vdf al cerrarse, asi que hay que editarlo cerrado."""
+    try:
+        if os.name == "nt":
+            out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq steam.exe"],
+                                 capture_output=True, text=True).stdout
+            return "steam.exe" in out.lower()
+        return subprocess.run(["pgrep", "-x", "steam"],
+                              capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
+def find_shortcuts() -> str:
+    """Localiza shortcuts.vdf. El formato es igual en los tres sistemas; solo
+    cambia donde Steam guarda userdata."""
+    import platform
+    home = os.path.expanduser("~")
+    candidatos = [
+        f"{home}/.steam/steam/userdata",                       # Linux
+        f"{home}/.local/share/Steam/userdata",                 # Linux (flatpak/otros)
+        f"{home}/.var/app/com.valvesoftware.Steam/.steam/steam/userdata",
+        f"{home}/Library/Application Support/Steam/userdata",  # macOS
+        r"C:\Program Files (x86)\Steam\userdata",           # Windows
+        os.path.expandvars(r"%ProgramFiles(x86)%\Steam\userdata"),
+    ]
+    for base in candidatos:
+        hits = glob.glob(os.path.join(base, "*", "config", "shortcuts.vdf"))
+        if hits:
+            return hits[0]
+    sys.exit("no encuentro shortcuts.vdf; pasa la ruta con --shortcuts")
+
+
 # ── logica ─────────────────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser()
@@ -80,13 +113,10 @@ def main():
     ap.add_argument("--art-logo")
     a = ap.parse_args()
 
-    if subprocess.run(["pgrep", "-x", "steam"], capture_output=True).returncode == 0:
+    if steam_corriendo():
         sys.exit("Steam esta abierto: cierralo antes o reescribira shortcuts.vdf al salir.")
 
-    paths = glob.glob(os.path.expanduser("~/.steam/steam/userdata/*/config/shortcuts.vdf"))
-    if not paths:
-        sys.exit("no encuentro shortcuts.vdf")
-    path = paths[0]
+    path = find_shortcuts()
 
     raw = open(path, "rb").read()
     pairs, _ = vdf_parse(raw)

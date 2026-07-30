@@ -20,16 +20,36 @@ de OpenAI en el puerto 8090 con un panel en vivo de tokens, CPU, GPU, RAM y VRAM
 
 ## Estado
 
-**Funciona en Linux / SteamOS.** Windows y macOS son el siguiente objetivo, todavia no
-soportados: ver [Portar a Windows y macOS](#portar-a-windows-y-macos).
+| Sistema | Estado |
+|---|---|
+| Linux / SteamOS | **Funcionando y medido** |
+| macOS | Codigo escrito, **sin probar** en una maquina real |
+| Windows | Codigo escrito, **sin probar**; falta el backend de GPU |
+
+Lo que queda por rematar en cada sistema esta en [TODO.md](TODO.md), con casillas.
+
+## Instalacion
+
+```bash
+git clone https://github.com/ddarthp/llm-stack.git
+cd llm-stack
+python3 install.py            # dice que detecta y que falta
+python3 install.py qwen-a1    # runtime + pesos de un modelo (4.5 GB)
+python3 -m llmstack           # selector
+```
+
+Necesita **Python 3.11+** (por `tomllib`). `pip install psutil` es opcional en Linux y
+recomendable en macOS y Windows, donde si no no habra datos de CPU ni RAM.
 
 ## Que hay aqui
 
 | | |
 |---|---|
 | `selector/` | El selector de modelos (`llm`) y su version a pantalla completa para Modo Juego |
-| `runner/run-model` | El lanzador. Uno solo para todos los modelos, parametrizado por `model.conf` |
-| `models/*/model.conf` | Lo unico que cambia entre modelos: pesos, contexto, sampling y flags propios |
+| `llmstack/` | El paquete: rutas, estadisticas, panel, runner y selector |
+| `llmstack/paths.py` · `sysinfo.py` | **Lo unico especifico de cada sistema** |
+| `install.py` | Detecta sistema y backend, baja llama.cpp y los pesos |
+| `models/*/model.toml` | Lo unico que cambia entre modelos: pesos, contexto, sampling |
 | `models/` | Cinco modelos: gpt-oss 20B, Qwen A1 4B, Gemma 3n E4B, Gemma 3 12B y Bonsai 27B |
 | `tools/steam-add` | Anade y quita atajos no-Steam escribiendo `shortcuts.vdf` directamente |
 | `tools/bonsai-power` | Sube el TDP de la APU mientras corre el modelo (opcional, necesita root) |
@@ -84,31 +104,14 @@ en los README correspondientes:
 
 ## Portar a Windows y macOS
 
-Lo que habria que cambiar, por orden de dificultad:
+El grueso ya esta hecho: las rutas se derivan del sistema en vez de estar incrustadas y las
+estadisticas tienen un backend por plataforma. **Solo `llmstack/paths.py` y
+`llmstack/sysinfo.py` contienen codigo especifico de un sistema**; el panel, el runner y la
+configuracion son identicos en los tres.
 
-1. **Rutas fijas.** Los lanzadores tienen `/home/deck/...` incrustado. Hay que derivarlas
-   de la ubicacion del script y de una carpeta de datos por sistema.
-2. **El panel.** Es bash y lee `/proc/stat`, `/proc/meminfo` y `/sys/class/drm` para las
-   estadisticas. Reescribirlo en Python (como ya esta el selector) con un backend por
-   sistema: `psutil` para CPU y RAM, y para la GPU `nvidia-smi` / `powermetrics` /
-   sysfs segun toque.
-3. **Binarios de llama.cpp.** Ahora se descargan a mano. Hace falta un instalador que
-   detecte sistema y backend (CUDA, Metal, Vulkan, ROCm, CPU) y baje la build correcta,
-   mas los pesos desde Hugging Face.
-4. **Integracion con Steam.** `shortcuts.vdf` es igual en los tres sistemas; solo cambia
-   la ruta de `userdata`. `tools/steam-add` ya es Python y se porta facil.
-5. **La terminal a pantalla completa.** `xterm` no existe en Windows ni macOS; habria que
-   usar Windows Terminal y Terminal.app / iTerm.
-
-Nada de eso es conceptualmente dificil, pero es una reescritura de los lanzadores, no un
-retoque.
-
-## Seguridad
-
-La API key es fija y compartida (`PON-AQUI-TU-CLAVE`) porque esto es un servidor de red local de
-uso ocasional y se prioriza que sea comoda de escribir. **Si haces publico este repositorio
-o expones el servidor fuera de tu red, cambiala.** Cualquiera que la sepa y llegue al
-puerto puede usar el modelo.
+Falta verificarlo en maquinas reales y cerrar los huecos conocidos: la GPU en Windows, la
+terminal a pantalla completa en macOS y el mando fuera de Linux. Todo desglosado con
+casillas en [TODO.md](TODO.md).
 
 ## Licencia
 

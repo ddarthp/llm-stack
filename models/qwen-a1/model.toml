@@ -1,0 +1,26 @@
+# Fine-tune de Qwen 3.5 4B para agentes. Su ficha pide otros ajustes de
+# sampling que el modelo original.
+
+name = "Qwen A1 4B"
+tag = "Agents-A1-4B Q8_0 · agente de programacion"
+note = "El mejor prefill, que es lo que paga un agente en cada turno. Ideal para opencode."
+order = 2
+
+model = "Agents-A1-4B-Q8_0.gguf"
+mmproj = "Agents-A1-4B-mmproj.gguf"
+ctx = 131072
+min_size = 4000000000
+runtime = "llamacpp"
+think = "max"
+
+sampling = ["--temp", "0.85", "--top-p", "0.95", "--top-k", "20", "--min-p", "0.0", "--presence-penalty", "1.1", "--repeat-penalty", "1.0"]
+
+[download]
+repo = "InternScience/Agents-A1-4B-Q8_0-GGUF"
+files = ["Agents-A1-4B-Q8_0.gguf"]
+
+[bench]
+# medido con llama-bench -p 512 -n 32 -r 3 en una Legion Go S (Z1E, Vulkan)
+tg = 16.64
+pp = 249.69
+vram_gb = 9.6

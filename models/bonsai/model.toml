@@ -1,0 +1,31 @@
+# Unico modelo que NO usa llama.cpp estandar: la cuantizacion Q2_0 solo la
+# lee el fork de PrismML. El sesgo de mean-centering del KV se anade solo
+# si el fichero existe (ver runner), y exige LLAMA_ATTN_ROT_DISABLE=1.
+
+name = "Bonsai 27B"
+tag = "Ternary Q2_0 · vision · 150K de contexto"
+note = "El mas lento con diferencia, pero el de contexto mas largo. Acepta imagenes."
+order = 5
+
+model = "Ternary-Bonsai-27B-Q2_0.gguf"
+mmproj = "Ternary-Bonsai-27B-mmproj-Q8_0.gguf"
+ctx = 150000
+min_size = 6000000000
+runtime = "llamacpp-prismml"
+think = "512"
+
+sampling = ["--temp", "0.7", "--top-p", "0.95", "--top-k", "20", "--min-p", "0"]
+extra = ["-ctk", "q4_0", "-ctv", "q4_0", "--image-min-tokens", "1024"]
+
+[env]
+LLAMA_ATTN_ROT_DISABLE = "1"
+
+[download]
+repo = "prism-ml/Ternary-Bonsai-27B-gguf"
+files = ["Ternary-Bonsai-27B-Q2_0.gguf", "Ternary-Bonsai-27B-mmproj-Q8_0.gguf"]
+
+[bench]
+# medido con llama-bench -p 512 -n 32 -r 3 en una Legion Go S (Z1E, Vulkan)
+tg = 4.51
+pp = 43.81
+vram_gb = 10.7

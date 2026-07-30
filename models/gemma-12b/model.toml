@@ -1,0 +1,25 @@
+# Version QAT: entrenado sabiendo que se iba a cuantizar, asi que a 4 bits
+# conserva mas calidad que una cuantizacion posterior del mismo tamano.
+
+name = "Gemma 3 12B"
+tag = "QAT Q4_0 · vision"
+note = "Cuantizado con QAT: mejor calidad a 4 bits que una cuantizacion normal. Acepta imagenes."
+order = 4
+
+model = "gemma-3-12b-it-qat-Q4_0.gguf"
+mmproj = "mmproj-model-f16-12B.gguf"
+ctx = 32768
+min_size = 6500000000
+runtime = "llamacpp"
+
+sampling = ["--temp", "1.0", "--top-k", "64", "--top-p", "0.95", "--min-p", "0.0"]
+
+[download]
+repo = "ggml-org/gemma-3-12b-it-qat-GGUF"
+files = ["gemma-3-12b-it-qat-Q4_0.gguf", "mmproj-model-f16-12B.gguf"]
+
+[bench]
+# medido con llama-bench -p 512 -n 32 -r 3 en una Legion Go S (Z1E, Vulkan)
+tg = 9.36
+pp = 99.55
+vram_gb = 7.5

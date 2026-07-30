@@ -1,0 +1,26 @@
+# MXFP4 es su formato nativo, no una cuantizacion posterior.
+# Su generation_config.json no fija sampling: estos valores son los
+# publicados por OpenAI.
+
+name = "gpt-oss 20B"
+tag = "MXFP4 · mezcla de expertos · razona"
+note = "El mas rapido generando pese a su tamano: pocos expertos activos por token."
+order = 1
+
+model = "gpt-oss-20b-MXFP4.gguf"
+ctx = 32768
+min_size = 11000000000
+runtime = "llamacpp"
+think = "max"
+
+sampling = ["--temp", "1.0", "--top-p", "1.0", "--top-k", "0"]
+
+[download]
+repo = "ggml-org/gpt-oss-20b-GGUF"
+files = ["gpt-oss-20b-MXFP4.gguf"]
+
+[bench]
+# medido con llama-bench -p 512 -n 32 -r 3 en una Legion Go S (Z1E, Vulkan)
+tg = 24.27
+pp = 200.41
+vram_gb = 12.6

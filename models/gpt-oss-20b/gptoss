@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# Atajo directo a gpt-oss 20B. Toda la logica esta en runner/run-model; aqui solo se
-# indica que modelo lanzar. Normalmente se usa el selector 'llm' en su lugar.
-exec /home/deck/llm-stack/runner/run-model "/home/deck/gpt-oss-20b" "$@"
