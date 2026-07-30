@@ -17,7 +17,9 @@ El puerto se cambia con `LLM_PORT=8095 llm`, y se propaga al modelo que elijas.
 
 ## Clave de acceso
 
-Una sola para todos los modelos: **`PON-AQUI-TU-CLAVE`**, en `/home/deck/llm/apikey`.
+Una sola para todos los modelos, en `/home/deck/llm/apikey`. Si el fichero no existe, el
+runner genera una aleatoria al arrancar; si prefieres una comoda de teclear, escribe la
+tuya ahi y se usa tal cual.
 
 ```bash
 curl http://TU-IP-LOCAL:8090/v1/chat/completions \
@@ -34,8 +36,14 @@ sabiendo esa palabra; si algun dia lo expones fuera de casa, cambia el contenido
 
 Plantilla de opencode lista en `/home/deck/llm/opencode.json`:
 
+La plantilla trae marcadores en vez de valores reales; este comando los rellena con los
+de tu maquina:
+
 ```bash
-mkdir -p ~/.config/opencode && cp /home/deck/llm/opencode.json ~/.config/opencode/opencode.json
+mkdir -p ~/.config/opencode
+sed -e "s|TU-IP-LOCAL|$(ip -4 route get 1.1.1.1 | grep -oP 'src \K[\d.]+')|" \
+    -e "s|PON-AQUI-TU-CLAVE|$(cat /home/deck/llm/apikey)|" \
+    /home/deck/llm/opencode.json > ~/.config/opencode/opencode.json
 ```
 
 ## Manejo

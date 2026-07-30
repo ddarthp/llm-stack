@@ -83,10 +83,14 @@ fi
 # API key: una sola para todos los modelos, para no reconfigurar los clientes al
 # cambiar de modelo. Es un servidor de red local de uso ocasional, asi que la clave
 # es un formalismo (llama-server exige una) y se prioriza que sea facil de escribir.
+# Si no hay clave todavia se genera una aleatoria: es el valor por defecto seguro.
+# Si prefieres una comoda de teclear (esto suele ser un servidor de LAN de uso
+# ocasional), escribe la tuya en ese fichero y se usara tal cual.
 if [ ! -s "$KEYFILE" ]; then
   mkdir -p "$(dirname "$KEYFILE")"
-  printf 'PON-AQUI-TU-CLAVE\n' > "$KEYFILE"
+  head -c 18 /dev/urandom | base64 | tr -d '/+=' > "$KEYFILE"
   chmod 600 "$KEYFILE"
+  echo "clave generada en $KEYFILE" >&2
 fi
 read -r APIKEY < "$KEYFILE"
 
