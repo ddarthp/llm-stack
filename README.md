@@ -10,11 +10,11 @@ de OpenAI en el puerto 8090 con un panel en vivo de tokens, CPU, GPU, RAM y VRAM
   MODELOS LOCALES   puerto 8090 para todos
   ──────────────────────────────────────────────────────────────────
 
-   ▸ Qwen A1 4B   16.6 tok/s · prefill 250 tok/s · 9.6 GB
-     Agents-A1-4B Q8_0 · agente de programacion
-
-     Bonsai 27B   4.5 tok/s · prefill 44 tok/s · 10.7 GB
-     Ternary Q2_0 · vision · 150K de contexto
+   ▸ gpt-oss 20B    24.3 tok/s · prefill 200 tok/s · 12.6 GB
+     Qwen A1 4B     16.6 tok/s · prefill 250 tok/s · 9.6 GB
+     Gemma 3n E4B   14.8 tok/s · prefill 194 tok/s · 5.9 GB
+     Gemma 3 12B     9.4 tok/s · prefill 100 tok/s · 7.5 GB
+     Bonsai 27B      4.5 tok/s · prefill  44 tok/s · 10.7 GB
   ──────────────────────────────────────────────────────────────────
 ```
 
@@ -28,8 +28,9 @@ soportados: ver [Portar a Windows y macOS](#portar-a-windows-y-macos).
 | | |
 |---|---|
 | `selector/` | El selector de modelos (`llm`) y su version a pantalla completa para Modo Juego |
-| `models/bonsai/` | Bonsai 27B ternario sobre el fork de llama.cpp de PrismML |
-| `models/qwen-a1/` | Agents-A1-4B sobre llama.cpp estandar |
+| `runner/run-model` | El lanzador. Uno solo para todos los modelos, parametrizado por `model.conf` |
+| `models/*/model.conf` | Lo unico que cambia entre modelos: pesos, contexto, sampling y flags propios |
+| `models/` | Cinco modelos: gpt-oss 20B, Qwen A1 4B, Gemma 3n E4B, Gemma 3 12B y Bonsai 27B |
 | `tools/steam-add` | Anade y quita atajos no-Steam escribiendo `shortcuts.vdf` directamente |
 | `tools/bonsai-power` | Sube el TDP de la APU mientras corre el modelo (opcional, necesita root) |
 | `extras/` | Caratulas de otras aplicaciones anadidas a Steam |
@@ -39,17 +40,33 @@ llama.cpp. Se descargan aparte; las instrucciones estan en el README de cada mod
 
 ## Rendimiento medido
 
-Z1 Extreme con iGPU Radeon 780M, backend Vulkan, `llama-bench -p 512 -n 32`:
+Z1 Extreme con iGPU Radeon 780M, backend Vulkan, `llama-bench -p 512 -n 32 -r 3`:
 
 | Modelo | Generacion | Prefill | VRAM |
 |---|---|---|---|
-| Qwen A1 4B Q8_0 | 16.64 tok/s | 249.69 tok/s | 9.6 GB |
+| gpt-oss 20B MXFP4 | **24.27 tok/s** | 200.41 tok/s | 12.6 GB |
+| Qwen A1 4B Q8_0 | 16.64 tok/s | **249.69 tok/s** | 9.6 GB |
+| Gemma 3n E4B Q8_0 | 14.81 tok/s | 194.07 tok/s | **5.9 GB** |
+| Gemma 3 12B QAT Q4_0 | 9.36 tok/s | 99.55 tok/s | 7.5 GB |
 | Bonsai 27B Q2_0 | 4.51 tok/s | 43.81 tok/s | 10.7 GB |
 
-Los README de cada modelo documentan los barridos que llevaron a cada ajuste, incluyendo
-lo que **no** funciono: la especulacion MTP (mas lenta y ademas tumba el driver Vulkan),
-el KV de 4 bits sin su sesgo de mean-centering, y un `--cache-ram` demasiado alto que
-provoco un OOM global.
+Dos resultados que rompen la intuicion: **gpt-oss 20B genera mas rapido que un 4B denso**
+porque es mezcla de expertos y activa pocos parametros por token; y **Bonsai 27B, el mas
+comprimido, es el mas lento**, porque los kernels ternarios en Vulkan no estan tan
+optimizados como los formatos comunes.
+
+### Decodificacion especulativa: tres intentos, tres fracasos
+
+Se probaron los tres metodos disponibles y **ninguno gana** en esta iGPU:
+
+| Metodo | Modelo | Resultado |
+|---|---|---|
+| DSpark (MTP) | Bonsai 27B | 3.48 vs 4.37 tok/s, y **tumba el driver Vulkan** de forma reproducible con prompts de codigo |
+| ngram (sin drafter) | Qwen A1 4B | 4.00 vs 4.35 tok/s, aceptacion 15% |
+| eagle3 | gpt-oss 20B | 19.6 vs 23.8 tok/s, aceptacion 55% |
+
+Tres modelos, tres arquitecturas de drafter distintas, mismo resultado: parece una
+limitacion del backend Vulkan sobre esta GPU integrada, no de los modelos.
 
 ## Notas del hardware
 

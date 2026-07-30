@@ -33,19 +33,27 @@ RUNNER = "/home/deck/llm-stack/runner/run-model"
 # los que aun no se han medido lo dicen en vez de inventarlo.
 MODELS = [
     {
+        "key": "gptoss",
+        "name": "gpt-oss 20B",
+        "sub": "MXFP4 · mezcla de expertos · razona",
+        "specs": "24.3 tok/s · prefill 200 tok/s · 12.6 GB",
+        "note": "El mas rapido generando pese a su tamano: pocos expertos activos por token.",
+        "dir": "/home/deck/gpt-oss-20b",
+    },
+    {
         "key": "qwen",
         "name": "Qwen A1 4B",
         "sub": "Agents-A1-4B Q8_0 · agente de programacion",
         "specs": "16.6 tok/s · prefill 250 tok/s · 9.6 GB",
-        "note": "El mas rapido. Mejor para opencode y uso con herramientas.",
+        "note": "El mejor prefill, que es lo que paga un agente en cada turno. Ideal para opencode.",
         "dir": "/home/deck/qwen-a1",
     },
     {
         "key": "gemma3n",
         "name": "Gemma 3n E4B",
         "sub": "Q8_0 · activacion selectiva",
-        "specs": "sin medir",
-        "note": "Ligero, pensado para funcionar bien en hardware modesto.",
+        "specs": "14.8 tok/s · prefill 194 tok/s · 5.9 GB",
+        "note": "El que menos memoria ocupa. Buen equilibrio si quieres dejar RAM libre.",
         "dir": "/home/deck/gemma-3n",
     },
     {
@@ -53,23 +61,15 @@ MODELS = [
         "name": "Gemma 3 12B",
         "sub": "QAT Q4_0 · vision · 32K de contexto",
         "specs": "9.4 tok/s · prefill 100 tok/s · 7.5 GB",
-        "note": "Cuantizado con QAT: mejor calidad a 4 bits. Acepta imagenes.",
+        "note": "Cuantizado con QAT: mejor calidad a 4 bits que una cuantizacion normal. Acepta imagenes.",
         "dir": "/home/deck/gemma-12b",
-    },
-    {
-        "key": "gptoss",
-        "name": "gpt-oss 20B",
-        "sub": "MXFP4 · mezcla de expertos · razona",
-        "specs": "sin medir",
-        "note": "20B totales pero pocos activos por token. El mas pesado en VRAM.",
-        "dir": "/home/deck/gpt-oss-20b",
     },
     {
         "key": "bonsai",
         "name": "Bonsai 27B",
         "sub": "Ternary Q2_0 · vision · 150K de contexto",
         "specs": "4.5 tok/s · prefill 44 tok/s · 10.7 GB",
-        "note": "Mas lento pero mas rico. Acepta imagenes.",
+        "note": "El mas lento con diferencia, pero el de contexto mas largo. Acepta imagenes.",
         "dir": "/home/deck/bonsai",
     },
 ]
