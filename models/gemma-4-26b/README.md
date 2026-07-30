@@ -7,15 +7,27 @@ imagenes **y video**.
 |---|---|
 | Pesos | `unsloth/gemma-4-26B-A4B-it-GGUF` · UD-Q3_K_XL (12.91 GB) |
 | Drafter MTP | activado por defecto |
-| Contexto | 32K |
+| Contexto | 64K (KV a 4 bits) |
 
 ## Medido aqui
 
 | | |
 |---|---|
-| Generacion | **20.37 tok/s** con MTP (18.85 sin el) |
+| Generacion | 16.8-19.8 tok/s segun el prompt, con MTP |
 | Prefill | 160.46 tok/s |
-| VRAM | 15.2 GB bajo carga |
+| VRAM | 15.0 GB bajo carga (91% del carveout) |
+| GTT | 301 MiB |
+
+## Por que 64K y KV a 4 bits
+
+opencode necesita 64K o mas para funcionar bien, y este modelo con KV en f16 ya ocupaba el
+**98%** del carveout a 64K. Cuantizando la KV a `q4_0` baja al **91%**, con el GTT en
+301 MiB y 12.8 GB de RAM libre. Incluso 128K entra (94%), pero la velocidad cae de 16.8 a
+14.4 tok/s porque hay mas KV que recorrer por token.
+
+Efecto secundario medido: la KV cuantizada **le resta precision al drafter MTP**, cuya
+aceptacion baja del 56.6% al 35.5%. Aun asi sigue compensando (18.12 -> 19.78 tok/s, +9%),
+asi que se queda activado.
 
 ## Por que Q3 y no la QAT Q4
 

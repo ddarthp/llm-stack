@@ -6,17 +6,23 @@
 # En una maquina con mas VRAM, cambia a unsloth/gemma-4-26B-A4B-it-qat-GGUF.
 name = "Gemma 4 26B-A4B"
 tag = "Q3_K_XL · MoE · vision"
-note = "MoE con vision y video. MTP activado: medido +8% (18.85 -> 20.37 t/s)."
+note = "MoE con vision y video. La KV va a 4 bits para poder llegar a 64K."
 order = 3
 
 model = "model.gguf"
 mmproj = "mmproj.gguf"
 mtp = "mtp.gguf"
 mtp_on = true
-# 32K y no mas: este modelo ya ocupa el 94% del carveout bajo carga.
-ctx = 32768
+# 64K: es el minimo util para agentes como opencode. Solo cabe gracias a la KV
+# cuantizada; con KV f16 este modelo ya ocupa el 98% del carveout a 64K.
+# Medido bajo carga: 15043 MiB (91%), GTT 301 MiB, 16.83 tok/s.
+ctx = 65536
 min_size = 12000000000
 runtime = "llamacpp"
+
+# KV a 4 bits: es lo que permite llegar a 64K de contexto en este modelo.
+# Medido en Bonsai que cuesta un 0.7% de velocidad, y aqui libera GBs.
+extra = ["-ctk", "q4_0", "-ctv", "q4_0"]
 
 sampling = ["--temp", "1.0", "--top-k", "64", "--top-p", "0.95", "--min-p", "0.0"]
 
@@ -26,6 +32,6 @@ files = ["gemma-4-26B-A4B-it-UD-Q3_K_XL.gguf"]
 
 [bench]
 # medido con llama-bench -p 512 -n 32 -r 3 en una Legion Go S (Z1E, Vulkan)
-tg = 20.37
+tg = 18.0
 pp = 160.46
-vram_gb = 15.2
+vram_gb = 15.0

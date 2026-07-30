@@ -81,6 +81,8 @@ comunes.
 
 No es el maximo de cada modelo sino lo que cabe con margen, medido cargando cada uno:
 
+**Minimo 64K en todos**, porque por debajo de eso opencode no funciona bien.
+
 | Modelo | Contexto | VRAM | % del carveout (16.4 GB) |
 |---|---|---|---|
 | Gemma 4 E4B | 128K | 6.4 GB | 39% |
@@ -88,11 +90,11 @@ No es el maximo de cada modelo sino lo que cabe con margen, medido cargando cada
 | Qwen A1 4B | 128K | 9.6 GB | 59% |
 | Bonsai 27B | 146K | 13.2 GB | 81% |
 | gpt-oss 20B | 64K | 13.3 GB | 81% |
-| Gemma 4 26B-A4B | 32K | 15.2 GB | 94% |
+| Gemma 4 26B-A4B | 64K | 15.0 GB | 91% |
 
-Los dos ultimos estan limitados por sus pesos, no por capricho: gpt-oss admite 128K pero
-ahi sube al 90%, y el 26B ya va al 94% con solo 32K. Se puede forzar cualquiera con
-`LLM_CTX=131072`, midiendo antes.
+Los dos ultimos estan limitados por sus pesos: gpt-oss admite 128K pero ahi sube al 90%, y
+el 26B solo alcanza 64K **cuantizando su KV a 4 bits** (con KV f16 se iba al 98%). Se puede
+forzar cualquiera con `LLM_CTX=131072`, midiendo antes.
 
 En esta maquina el techo real es el **carveout de 16 GB** que reserva la BIOS: lo que
 quepa ahi no le quita nada al sistema. Vulkan puede direccionar 24 GB (carveout + GTT) y
