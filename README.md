@@ -109,3 +109,10 @@ La API key es fija y compartida (`PON-AQUI-TU-CLAVE`) porque esto es un servidor
 uso ocasional y se prioriza que sea comoda de escribir. **Si haces publico este repositorio
 o expones el servidor fuera de tu red, cambiala.** Cualquiera que la sepa y llegue al
 puerto puede usar el modelo.
+
+## Licencia
+
+MIT — ver [LICENSE](LICENSE). Aplica al codigo de este repositorio: lanzadores, selector y
+herramientas. **Los pesos de los modelos tienen sus propias licencias** y no se distribuyen
+aqui; consulta cada uno en Hugging Face antes de usarlo, sobre todo si es para algo
+comercial. llama.cpp es MIT; el fork de PrismML que usa Bonsai tiene su propia licencia.
