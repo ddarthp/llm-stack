@@ -50,7 +50,7 @@ recomendable en macOS y Windows, donde si no no habra datos de CPU ni RAM.
 | `llmstack/paths.py` · `sysinfo.py` | **Lo unico especifico de cada sistema** |
 | `install.py` | Detecta sistema y backend, baja llama.cpp y los pesos |
 | `models/*/model.toml` | Lo unico que cambia entre modelos: pesos, contexto, sampling |
-| `models/` | Cinco modelos: gpt-oss 20B, Qwen A1 4B, Gemma 3n E4B, Gemma 3 12B y Bonsai 27B |
+| `models/` | Seis modelos: gpt-oss 20B, tres Gemma 4 (E4B, 12B, 26B-A4B), Qwen A1 4B y Bonsai 27B |
 | `tools/steam-add` | Anade y quita atajos no-Steam escribiendo `shortcuts.vdf` directamente |
 | `tools/bonsai-power` | Sube el TDP de la APU mientras corre el modelo (opcional, necesita root) |
 | `extras/` | Caratulas de otras aplicaciones anadidas a Steam |
@@ -65,28 +65,31 @@ Z1 Extreme con iGPU Radeon 780M, backend Vulkan, `llama-bench -p 512 -n 32 -r 3`
 | Modelo | Generacion | Prefill | VRAM |
 |---|---|---|---|
 | gpt-oss 20B MXFP4 | **24.27 tok/s** | 200.41 tok/s | 12.6 GB |
-| Qwen A1 4B Q8_0 | 16.64 tok/s | **249.69 tok/s** | 9.6 GB |
-| Gemma 3n E4B Q8_0 | 14.81 tok/s | 194.07 tok/s | **5.9 GB** |
-| Gemma 3 12B QAT Q4_0 | 9.36 tok/s | 99.55 tok/s | 7.5 GB |
+| Gemma 4 E4B QAT Q4 | 23.34 tok/s | **244.49 tok/s** | **4.9 GB** |
+| Gemma 4 26B-A4B Q3 | 20.37 tok/s (con MTP) | 160.46 tok/s | 15.2 GB |
+| Qwen A1 4B Q8_0 | 16.64 tok/s | 249.69 tok/s | 9.6 GB |
+| Gemma 4 12B QAT Q4 | 9.62 tok/s | 92.43 tok/s | 6.8 GB |
 | Bonsai 27B Q2_0 | 4.51 tok/s | 43.81 tok/s | 10.7 GB |
 
-Dos resultados que rompen la intuicion: **gpt-oss 20B genera mas rapido que un 4B denso**
-porque es mezcla de expertos y activa pocos parametros por token; y **Bonsai 27B, el mas
-comprimido, es el mas lento**, porque los kernels ternarios en Vulkan no estan tan
-optimizados como los formatos comunes.
+Lo que rompe la intuicion: **los modelos de mezcla de expertos y de activacion selectiva
+ganan a los densos**. gpt-oss 20B y Gemma 4 26B generan mas rapido que un Gemma 4 12B
+denso, y el Gemma 4 E4B casi iguala a gpt-oss ocupando un tercio. Y **Bonsai 27B, el mas
+comprimido, es el mas lento**: sus kernels ternarios en Vulkan rinden peor que los formatos
+comunes.
 
-### Decodificacion especulativa: tres intentos, tres fracasos
-
-Se probaron los tres metodos disponibles y **ninguno gana** en esta iGPU:
+### Decodificacion especulativa: tres fracasos y un acierto
 
 | Metodo | Modelo | Resultado |
 |---|---|---|
-| DSpark (MTP) | Bonsai 27B | 3.48 vs 4.37 tok/s, y **tumba el driver Vulkan** de forma reproducible con prompts de codigo |
+| DSpark (MTP) | Bonsai 27B | 3.48 vs 4.37 tok/s, y **tumba el driver Vulkan** con prompts de codigo |
 | ngram (sin drafter) | Qwen A1 4B | 4.00 vs 4.35 tok/s, aceptacion 15% |
 | eagle3 | gpt-oss 20B | 19.6 vs 23.8 tok/s, aceptacion 55% |
+| **MTP de Gemma 4** | **Gemma 4 26B-A4B** | **20.37 vs 18.85 tok/s (+8%)**, aceptacion 57% |
 
-Tres modelos, tres arquitecturas de drafter distintas, mismo resultado: parece una
-limitacion del backend Vulkan sobre esta GPU integrada, no de los modelos.
+La diferencia del que gana esta en el diseno, no en el modelo: el drafter de Gemma 4
+**comparte la KV del modelo principal** y cuesta ~320 MiB, mientras que dspark exigia su
+propio contexto y se comia 2.7 GB para no aportar nada. En el Gemma 4 E4B el MTP queda en
+empate (+1%, ruido), asi que solo va activado por defecto en el 26B.
 
 ## Notas del hardware
 

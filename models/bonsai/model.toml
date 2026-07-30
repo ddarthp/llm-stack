@@ -5,7 +5,7 @@
 name = "Bonsai 27B"
 tag = "Ternary Q2_0 · vision · 150K de contexto"
 note = "El mas lento con diferencia, pero el de contexto mas largo. Acepta imagenes."
-order = 5
+order = 6
 
 model = "Ternary-Bonsai-27B-Q2_0.gguf"
 mmproj = "Ternary-Bonsai-27B-mmproj-Q8_0.gguf"

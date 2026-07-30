@@ -28,6 +28,9 @@ class Model:
     sampling: list[str] = field(default_factory=list)
     extra: list[str] = field(default_factory=list)
     think: str = ""
+    mtp: str = ""            # drafter de multi-token prediction, si el modelo lo trae
+    spec_n: int = 4          # tokens que propone por ronda
+    mtp_on: bool = False     # activarlo por defecto (solo si se ha medido que gana)
     env: dict[str, str] = field(default_factory=dict)
     download_repo: str = ""
     download_files: list[str] = field(default_factory=list)
@@ -45,6 +48,10 @@ class Model:
     @property
     def mmproj_path(self) -> Path | None:
         return self.dir / self.mmproj if self.mmproj else None
+
+    @property
+    def mtp_path(self) -> Path | None:
+        return self.dir / self.mtp if self.mtp else None
 
     @property
     def runtime_path(self) -> Path:

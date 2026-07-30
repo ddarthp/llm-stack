@@ -78,6 +78,15 @@ def build_command(m: config.Model, port: int, key: str, ctx: int) -> list[str]:
         budget = {"off": "0", "max": "-1"}.get(think, think)
         cmd += ["--reasoning-budget", budget]
 
+    # Multi-token prediction. El drafter de Gemma 4 comparte la KV del modelo
+    # principal, asi que apenas cuesta memoria; otros (dspark) piden la suya y por
+    # eso salian caros. Se activa con LLM_MTP=on porque en esta iGPU la
+    # especulacion ha perdido en las tres pruebas anteriores: hay que medirlo.
+    quiere_mtp = os.environ.get("LLM_MTP", "on" if m.mtp_on else "off") == "on"
+    if m.mtp_path and m.mtp_path.is_file() and quiere_mtp:
+        cmd += ["-md", str(m.mtp_path), "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", str(m.spec_n)]
+
     # El sesgo de mean-centering del KV solo existe para Bonsai y solo si se genero.
     bias = m.dir / "kv-bias.gguf"
     if bias.is_file():

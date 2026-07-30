@@ -1,0 +1,30 @@
+# Gemma 4 26B-A4B: mezcla de expertos, 26B totales y ~4B activos por token.
+#
+# OJO con la cuantizacion: el QAT Q4 oficial pesa 14.25 GB y NO cabe holgadamente
+# en el carveout de 16 GB de la Legion Go S (referencia medida: gpt-oss con 12.11 GB
+# de pesos ocupa 12.6 GB de VRAM). Por eso se usa Q3_K_XL, que deja margen.
+# En una maquina con mas VRAM, cambia a unsloth/gemma-4-26B-A4B-it-qat-GGUF.
+name = "Gemma 4 26B-A4B"
+tag = "Q3_K_XL · MoE · vision"
+note = "MoE con vision y video. MTP activado: medido +8% (18.85 -> 20.37 t/s)."
+order = 3
+
+model = "model.gguf"
+mmproj = "mmproj.gguf"
+mtp = "mtp.gguf"
+mtp_on = true
+ctx = 32768
+min_size = 12000000000
+runtime = "llamacpp"
+
+sampling = ["--temp", "1.0", "--top-k", "64", "--top-p", "0.95", "--min-p", "0.0"]
+
+[download]
+repo = "unsloth/gemma-4-26B-A4B-it-GGUF"
+files = ["gemma-4-26B-A4B-it-UD-Q3_K_XL.gguf"]
+
+[bench]
+# medido con llama-bench -p 512 -n 32 -r 3 en una Legion Go S (Z1E, Vulkan)
+tg = 20.37
+pp = 160.46
+vram_gb = 15.2

@@ -1,0 +1,24 @@
+# Gemma 4 12B en cuantizacion QAT, con vision y drafter MTP.
+name = "Gemma 4 12B"
+tag = "QAT Q4 · vision"
+note = "Denso de tamano medio: mas lento que los MoE pero con calidad de 12B reales."
+order = 5
+
+model = "model.gguf"
+mmproj = "mmproj.gguf"
+mtp = "mtp.gguf"
+ctx = 32768
+min_size = 6000000000
+runtime = "llamacpp"
+
+sampling = ["--temp", "1.0", "--top-k", "64", "--top-p", "0.95", "--min-p", "0.0"]
+
+[download]
+repo = "unsloth/gemma-4-12B-it-qat-GGUF"
+files = ["gemma-4-12B-it-qat-UD-Q4_K_XL.gguf", "mmproj-F16.gguf", "mtp-gemma-4-12B-it.gguf"]
+
+[bench]
+# medido con llama-bench -p 512 -n 32 -r 3 en una Legion Go S (Z1E, Vulkan)
+tg = 9.62
+pp = 92.43
+vram_gb = 6.8

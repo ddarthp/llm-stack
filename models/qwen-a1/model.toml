@@ -4,7 +4,7 @@
 name = "Qwen A1 4B"
 tag = "Agents-A1-4B Q8_0 · agente de programacion"
 note = "El mejor prefill, que es lo que paga un agente en cada turno. Ideal para opencode."
-order = 2
+order = 4
 
 model = "Agents-A1-4B-Q8_0.gguf"
 mmproj = "Agents-A1-4B-mmproj.gguf"

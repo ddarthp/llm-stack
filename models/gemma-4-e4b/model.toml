@@ -1,0 +1,27 @@
+# Gemma 4 E4B: activacion selectiva, ~4B de parametros efectivos.
+# Cuantizacion QAT: entrenada sabiendo que iba a cuantizarse, asi que a 4 bits
+# conserva mas calidad que una cuantizacion posterior del mismo tamano.
+name = "Gemma 4 E4B"
+tag = "QAT Q4 · vision"
+note = "Casi tan rapido como gpt-oss ocupando la mitad. El MTP no aporta aqui (+1%, ruido)."
+order = 2
+
+model = "model.gguf"
+mmproj = "mmproj.gguf"
+mtp = "mtp.gguf"
+ctx = 32768
+min_size = 4000000000
+runtime = "llamacpp"
+
+# Ajustes publicados por Google para la familia Gemma 4.
+sampling = ["--temp", "1.0", "--top-k", "64", "--top-p", "0.95", "--min-p", "0.0"]
+
+[download]
+repo = "unsloth/gemma-4-E4B-it-qat-GGUF"
+files = ["gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf", "mmproj-F16.gguf", "mtp-gemma-4-E4B-it.gguf"]
+
+[bench]
+# medido con llama-bench -p 512 -n 32 -r 3 en una Legion Go S (Z1E, Vulkan)
+tg = 23.34
+pp = 244.49
+vram_gb = 4.9
