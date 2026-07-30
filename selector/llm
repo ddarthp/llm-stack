@@ -26,6 +26,11 @@ STATE = os.path.join(ROOT, "last")
 PORT = os.environ.get("LLM_PORT", "8090")
 AUTOSTART = int(os.environ.get("LLM_AUTOSTART", "15"))  # segundos; 0 = sin cuenta atras
 
+RUNNER = "/home/deck/llm-stack/runner/run-model"
+
+# Cada modelo es un directorio con su model.conf; el runner es el mismo para todos.
+# 'specs' se rellena con lo medido en esta maquina (llama-bench -p 512 -n 32);
+# los que aun no se han medido lo dicen en vez de inventarlo.
 MODELS = [
     {
         "key": "qwen",
@@ -33,8 +38,31 @@ MODELS = [
         "sub": "Agents-A1-4B Q8_0 · agente de programacion",
         "specs": "16.6 tok/s · prefill 250 tok/s · 9.6 GB",
         "note": "El mas rapido. Mejor para opencode y uso con herramientas.",
-        "cmd": ["/home/deck/qwen-a1/qwen"],
-        "env": {"QWEN_PORT": PORT},
+        "dir": "/home/deck/qwen-a1",
+    },
+    {
+        "key": "gemma3n",
+        "name": "Gemma 3n E4B",
+        "sub": "Q8_0 · activacion selectiva",
+        "specs": "sin medir",
+        "note": "Ligero, pensado para funcionar bien en hardware modesto.",
+        "dir": "/home/deck/gemma-3n",
+    },
+    {
+        "key": "gemma12b",
+        "name": "Gemma 3 12B",
+        "sub": "QAT Q4_0 · vision · 32K de contexto",
+        "specs": "9.4 tok/s · prefill 100 tok/s · 7.5 GB",
+        "note": "Cuantizado con QAT: mejor calidad a 4 bits. Acepta imagenes.",
+        "dir": "/home/deck/gemma-12b",
+    },
+    {
+        "key": "gptoss",
+        "name": "gpt-oss 20B",
+        "sub": "MXFP4 · mezcla de expertos · razona",
+        "specs": "sin medir",
+        "note": "20B totales pero pocos activos por token. El mas pesado en VRAM.",
+        "dir": "/home/deck/gpt-oss-20b",
     },
     {
         "key": "bonsai",
@@ -42,10 +70,12 @@ MODELS = [
         "sub": "Ternary Q2_0 · vision · 150K de contexto",
         "specs": "4.5 tok/s · prefill 44 tok/s · 10.7 GB",
         "note": "Mas lento pero mas rico. Acepta imagenes.",
-        "cmd": ["/home/deck/bonsai/bonsai"],
-        "env": {"BONSAI_PORT": PORT},
+        "dir": "/home/deck/bonsai",
     },
 ]
+for _m in MODELS:
+    _m["cmd"] = [RUNNER, _m["dir"]]
+    _m["env"] = {"LLM_PORT": PORT}
 
 R = "\033[0m"; B = "\033[1m"; D = "\033[2m"
 GRN = "\033[38;5;77m"; YEL = "\033[38;5;221m"; RED = "\033[38;5;203m"
@@ -177,12 +207,8 @@ def run_model(m):
     os.system("clear")
     env = dict(os.environ)
     env.update(m["env"])
-    # Cada lanzador lee su propia variable para la pista de salida; en Modo Juego
-    # no hay Ctrl+C y hay que indicar la via de Steam.
-    hint = os.environ.get("LLM_EXIT_HINT")
-    if hint:
-        env["BONSAI_EXIT_HINT"] = hint
-        env["QWEN_EXIT_HINT"] = hint
+    # LLM_EXIT_HINT ya viaja en el entorno: el runner lo lee para indicar como
+    # salir en Modo Juego, donde no hay Ctrl+C.
     # El hijo debe recibir Ctrl+C del terminal; el menu lo ignora mientras tanto.
     prev = signal.signal(signal.SIGINT, signal.SIG_IGN)
     child = subprocess.Popen(m["cmd"], env=env)

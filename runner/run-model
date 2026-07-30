@@ -1,0 +1,286 @@
+#!/usr/bin/env bash
+# run-model — lanzador generico. Toda la diferencia entre modelos vive en el
+# fichero model.conf de cada uno, no en copias de este script.
+#
+#   run-model /ruta/al/modelo        (o MODEL_DIR=/ruta run-model)
+#
+# Variables que puede definir model.conf (todas opcionales salvo NAME y MODEL):
+#   NAME      nombre visible en el panel
+#   TAG       linea corta de descripcion (cuantizacion, capacidades)
+#   MODEL     ruta del .gguf, relativa al directorio del modelo
+#   MMPROJ    proyector de vision, si lo hay
+#   CTX       ventana de contexto
+#   SAMPLING  flags de sampling recomendados por el modelo
+#   EXTRA     flags adicionales (razonamiento, drafters, sesgos de KV...)
+#   THINK     off | max | <numero>  (solo si el modelo razona)
+#   MIN_SIZE  tamano minimo esperado del .gguf, para detectar descargas a medias
+
+set -uo pipefail
+
+ROOT="${1:-${MODEL_DIR:-}}"
+[ -n "$ROOT" ] || { echo "uso: run-model /ruta/al/modelo" >&2; exit 1; }
+ROOT="${ROOT%/}"
+[ -f "$ROOT/model.conf" ] || { echo "falta $ROOT/model.conf" >&2; exit 1; }
+
+# Valores por defecto, sobrescribibles por model.conf y por el entorno.
+NAME="modelo"; TAG=""; MMPROJ=""; CTX=32768; SAMPLING=""; EXTRA=""
+THINK=""; MIN_SIZE=100000000; IMGMAX=1024
+BIN="$ROOT/bin"
+# shellcheck disable=SC1091
+. "$ROOT/model.conf"
+
+MODEL="$ROOT/$MODEL"
+[ -n "$MMPROJ" ] && MMPROJ="$ROOT/$MMPROJ"
+
+PORT="${LLM_PORT:-${PORT:-8090}}"
+CTX="${LLM_CTX:-$CTX}"
+NGL="${LLM_NGL:-99}"
+THREADS="${LLM_THREADS:-8}"
+UBATCH="${LLM_UBATCH:-512}"
+CACHERAM="${LLM_CACHE_RAM:-1024}"
+IMGMAX="${LLM_IMG:-$IMGMAX}"
+KEYFILE="${LLM_KEYFILE:-/home/deck/llm/apikey}"
+LOG="$ROOT/logs/server.log"
+EXIT_HINT="${LLM_EXIT_HINT:-Ctrl+C}"
+
+# Razonamiento: solo se pasa el flag si el modelo lo admite (THINK definido).
+THINKFLAG=()
+if [ -n "$THINK" ]; then
+  THINK="${LLM_THINK:-$THINK}"
+  case "$THINK" in
+    off)  THINKFLAG=(--reasoning-budget 0) ;;
+    max)  THINKFLAG=(--reasoning-budget -1) ;;
+    *[!0-9]*) echo "THINK debe ser off, max o un numero" >&2; exit 1 ;;
+    *)    THINKFLAG=(--reasoning-budget "$THINK") ;;
+  esac
+fi
+
+IMGFLAG=()
+mkdir -p "$ROOT/logs"
+
+export LD_LIBRARY_PATH="$BIN${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+C_RESET=$'\033[0m'; C_DIM=$'\033[2m'; C_B=$'\033[1m'
+C_GRN=$'\033[38;5;77m'; C_YEL=$'\033[38;5;221m'; C_RED=$'\033[38;5;203m'
+C_CYA=$'\033[38;5;80m'; C_MAG=$'\033[38;5;176m'; C_GRY=$'\033[38;5;244m'
+
+die() { printf '%s\n' "${C_RED}error:${C_RESET} $*" >&2; exit 1; }
+
+# ── comprobaciones ────────────────────────────────────────────────────────
+[ -x "$BIN/llama-server" ] || die "no encuentro $BIN/llama-server"
+[ -f "$MODEL" ] || die "falta el modelo: $MODEL"
+MODEL_SZ=$(stat -c %s "$MODEL")
+[ "$MODEL_SZ" -gt "$MIN_SIZE" ] || die "el modelo parece incompleto ($((MODEL_SZ/1024/1024)) MB). ¿Terminó la descarga?"
+MMFLAG=(); [ -n "$MMPROJ" ] && [ -f "$MMPROJ" ] && \
+  { MMFLAG=(--mmproj "$MMPROJ"); IMGFLAG=(--image-max-tokens "$IMGMAX"); }
+
+
+
+if ss -tln 2>/dev/null | grep -qE "[:.]$PORT\b"; then
+  die "el puerto $PORT ya está ocupado. Prueba: PORT=8092 en model.conf"
+fi
+
+# API key: una sola para todos los modelos, para no reconfigurar los clientes al
+# cambiar de modelo. Es un servidor de red local de uso ocasional, asi que la clave
+# es un formalismo (llama-server exige una) y se prioriza que sea facil de escribir.
+if [ ! -s "$KEYFILE" ]; then
+  mkdir -p "$(dirname "$KEYFILE")"
+  printf 'PON-AQUI-TU-CLAVE\n' > "$KEYFILE"
+  chmod 600 "$KEYFILE"
+fi
+read -r APIKEY < "$KEYFILE"
+
+LANIP=$(ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[\d.]+' | head -1)
+LANIP=${LANIP:-127.0.0.1}
+
+mkdir -p "$ROOT/logs"; : > "$LOG"
+
+# ── ciclo de vida ─────────────────────────────────────────────────────────
+SRV_PID=""
+cleanup() {
+  trap - EXIT INT TERM HUP
+  printf '\033[?25h\n'
+  if [ -n "$SRV_PID" ] && kill -0 "$SRV_PID" 2>/dev/null; then
+    printf '%s\n' "${C_YEL}apagando $NAME…${C_RESET}"
+    kill -TERM "$SRV_PID" 2>/dev/null
+    for _ in $(seq 1 40); do kill -0 "$SRV_PID" 2>/dev/null || break; sleep 0.25; done
+    kill -KILL "$SRV_PID" 2>/dev/null
+    wait "$SRV_PID" 2>/dev/null
+  fi
+  pkill -KILL -P $$ 2>/dev/null
+  printf '%s\n' "${C_GRY}$NAME detenido. VRAM y RAM liberadas.${C_RESET}"
+  exit 0
+}
+trap cleanup EXIT INT TERM HUP
+
+printf '\033[?25l'
+
+
+printf '%s\n' "${C_GRN}▲${C_RESET} arrancando llama-server ($NAME)…"
+
+"$BIN/llama-server" \
+  -m "$MODEL" "${MMFLAG[@]}" \
+  --host 0.0.0.0 --port "$PORT" \
+  -c "$CTX" -np 1 -ngl "$NGL" -t "$THREADS" -ub "$UBATCH" \
+  -fa on \
+  $SAMPLING \
+  --jinja --api-key "$APIKEY" "${THINKFLAG[@]}" "${IMGFLAG[@]}" $EXTRA \
+  --metrics --no-warmup --cache-ram "$CACHERAM" \
+  >> "$LOG" 2>&1 &
+SRV_PID=$!
+
+# ── helpers del panel ─────────────────────────────────────────────────────
+PREV_TOT=0; PREV_IDLE=0
+cpu_pct() {  # sin forks: lee /proc/stat con el builtin read
+  local line t=0 i v
+  read -r line < /proc/stat
+  set -- $line          # $1=cpu $2=user $3=nice $4=system $5=idle $6=iowait ...
+  shift                 # descarta la etiqueta "cpu"
+  i=$(( $4 + $5 ))      # idle + iowait
+  for v in "$@"; do t=$(( t + v )); done
+  local dt=$(( t - PREV_TOT )) di=$(( i - PREV_IDLE ))
+  PREV_TOT=$t; PREV_IDLE=$i
+  if (( dt <= 0 )); then CPU_PCT=0; else CPU_PCT=$(( (100*(dt-di))/dt )); fi
+}
+CPU_PCT=0
+
+mem_mb() {  # sin forks: MemTotal y "usada" a partir de /proc/meminfo
+  local k v u total=0 avail=0
+  while read -r k v u; do
+    case $k in
+      MemTotal:)     total=$(( v / 1024 )) ;;
+      MemAvailable:) avail=$(( v / 1024 )); break ;;
+    esac
+  done < /proc/meminfo
+  MT=$total; MU=$(( total - avail ))
+}
+# Sin subprocesos: el panel se refresca cada segundo y cada $(...) es un fork.
+# Ademas de ser mas ligero, evita multiplicar cualquier ruido que el entorno
+# imprima en cada proceso nuevo (p.ej. el overlay de Steam en Modo Juego).
+DRM=/sys/class/drm/card0/device
+# Asignan a una global en vez de devolver por $(...), que forkearia un subshell.
+RDV=0
+rdv() { RDV=0; [ -r "$1" ] && read -r RDV < "$1" 2>/dev/null; RDV=${RDV:-0}; }
+rd()  { rdv "$1"; printf '%s' "$RDV"; }   # version con salida, para usos puntuales
+
+BAR_FULL='━━━━━━━━━━━━━━'   # 14
+BAR_EMPT='──────────────'   # 14
+bar() { # bar <pct> [ancho]
+  local p=$1 w=${2:-14} f c
+  (( p > 100 )) && p=100; (( p < 0 )) && p=0
+  f=$(( p*w/100 ))
+  if   (( p >= 85 )); then c=$C_RED; elif (( p >= 60 )); then c=$C_YEL; else c=$C_GRN; fi
+  printf '%s%s%s%s%s' "$c" "${BAR_FULL:0:f}" "$C_GRY" "${BAR_EMPT:0:w-f}" "$C_RESET"
+}
+RULE=$(printf '─%.0s' $(seq 1 66))
+hb() { printf '%s%s%s\n' "$C_GRY" "$RULE" "$C_RESET"; }
+
+# Los hwmon se resuelven una sola vez: sus indices no cambian mientras corre.
+HW_CPU=/dev/null; HW_GPU=/dev/null
+for h in /sys/class/hwmon/hwmon*; do
+  n=""; [ -r "$h/name" ] && read -r n < "$h/name"
+  case $n in
+    k10temp) [ -r "$h/temp1_input" ] && HW_CPU="$h/temp1_input" ;;
+    amdgpu)  [ -r "$h/temp1_input" ] && HW_GPU="$h/temp1_input" ;;
+  esac
+done
+
+STARTED=$EPOCHSECONDS
+READY=0; SERVED=0; PREV_ACT=0; TICK=0
+cpu_pct >/dev/null   # cebar el delta
+
+# ── bucle del panel ───────────────────────────────────────────────────────
+while :; do
+  if ! kill -0 "$SRV_PID" 2>/dev/null; then
+    printf '\033[?25h\n%s\n\n' "${C_RED}llama-server terminó inesperadamente. Últimas líneas:${C_RESET}"
+    tail -n 25 "$LOG"
+    SRV_PID=""; exit 1
+  fi
+
+  (( READY == 0 )) && grep -q "server is listening" "$LOG" 2>/dev/null && READY=1
+
+  # Lecturas directas con el builtin read: cada $(...) seria un fork por segundo.
+  cpu_pct >/dev/null
+  CPU=$CPU_PCT
+  rdv "$DRM/gpu_busy_percent";    GPU=$RDV
+  rdv "$DRM/mem_info_vram_used";  VU=$(( RDV / 1048576 ))
+  rdv "$DRM/mem_info_vram_total"; VT=$(( RDV / 1048576 ))
+  mem_mb
+  rdv "$HW_CPU"; TC=$(( RDV / 1000 ))
+  rdv "$HW_GPU"; TG=$(( RDV / 1000 ))
+
+  # estadisticas reales desde el endpoint Prometheus del servidor
+  if (( READY )); then
+    eval "$(curl -s -m 1 -H "Authorization: Bearer $APIKEY" "http://127.0.0.1:$PORT/metrics" 2>/dev/null \
+      | awk '/^llamacpp:/{gsub(/^llamacpp:/,"");
+             if($1=="tokens_predicted_total")   printf "M_GEN=%d\n",$2;
+             if($1=="prompt_tokens_total")      printf "M_PROMPT=%d\n",$2;
+             if($1=="predicted_tokens_seconds") printf "M_TPS=%.2f\n",$2;
+             if($1=="prompt_tokens_seconds")    printf "M_PPS=%.1f\n",$2;
+             if($1=="requests_processing")      printf "M_ACT=%d\n",$2;}')"
+  fi
+  M_GEN=${M_GEN:-0}; M_PROMPT=${M_PROMPT:-0}; M_TPS=${M_TPS:-0}
+  M_PPS=${M_PPS:-0}; M_ACT=${M_ACT:-0}
+  (( PREV_ACT > 0 && M_ACT == 0 )) && SERVED=$(( SERVED + PREV_ACT ))
+  PREV_ACT=$M_ACT
+
+  # progreso en vivo: el servidor escribe "n_decoded = N, tg = X t/s" mientras genera
+  LIVE=$(grep -o 'n_decoded = *[0-9]*, tg = *[0-9.]*' "$LOG" 2>/dev/null | tail -1)
+  LIVE_N=$(printf '%s' "$LIVE" | sed -n 's/.*n_decoded = *\([0-9]*\).*/\1/p')
+  LIVE_TG=$(printf '%s' "$LIVE" | sed -n 's/.*tg = *\([0-9.]*\).*/\1/p')
+  # Spinner ASCII: la tipografia Hack no trae los glifos braille y en la consola
+  # caia a otra fuente, descuadrando la linea.
+  SPIN_F=('|' '/' '-' '\')
+  SPIN=${SPIN_F[$(( TICK % 4 ))]}
+  TICK=$(( TICK + 1 ))
+
+  # quien esta conectado ahora mismo
+  CLIENTS=$(ss -tn state established "sport = :$PORT" 2>/dev/null \
+            | awk 'NR>1{sub(/:[0-9]+$/,"",$4); print $4}' | grep -v '^127\.' | sort -u | paste -sd' ')
+  UP=$(( EPOCHSECONDS - STARTED ))
+
+  if (( READY )); then STATUS="${C_GRN}● ACTIVO${C_RESET}"; else STATUS="${C_YEL}◐ CARGANDO MODELO${C_RESET}"; fi
+
+  {
+  printf '\033[H'
+  printf '\n  %s%s%s %s%s · %sK ctx%s  %s  %sup %02d:%02d:%02d%s\n' \
+    "$C_B$C_MAG" "$NAME" "$C_RESET" "$C_DIM" "$TAG" "$((CTX/1024))" "$C_RESET" "$STATUS" "$C_GRY" \
+    $((UP/3600)) $((UP%3600/60)) $((UP%60)) "$C_RESET"
+  printf '  '; hb
+  printf '   %sAPI%s     %shttp://%s:%s/v1%s  %s(OpenAI-compatible)%s\n' \
+    "$C_GRY" "$C_RESET" "$C_CYA$C_B" "$LANIP" "$PORT" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '   %sWebUI%s   %shttp://%s:%s%s\n' "$C_GRY" "$C_RESET" "$C_CYA" "$LANIP" "$PORT" "$C_RESET"
+  printf '   %sLocal%s   %shttp://127.0.0.1:%s%s\n' "$C_GRY" "$C_RESET" "$C_DIM" "$PORT" "$C_RESET"
+  printf '   %sKey%s     %s%s%s\n' "$C_GRY" "$C_RESET" "$C_DIM" "$APIKEY" "$C_RESET"
+  printf '  '; hb
+  TDPNOW=$(rd /sys/class/firmware-attributes/lenovo-wmi-other-0/attributes/ppt_pl1_spl/current_value)
+  GOVNOW=$(rd /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)
+  printf '   %sCPU %s  %s  %3d%%   %s%s · %sW · %d°C%s\n' "$C_GRY" "$C_RESET" "$(bar "$CPU")" "$CPU" \
+    "$C_DIM" "${GOVNOW:-?}" "${TDPNOW:-?}" "$TC" "$C_RESET"
+  printf '   %sGPU %s  %s  %3d%%   %sRADV Phoenix · %d°C%s\n' "$C_GRY" "$C_RESET" "$(bar "$GPU")" "$GPU" "$C_DIM" "$TG" "$C_RESET"
+  printf '   %sRAM %s  %s  %3d%%   %s%s / %s MB%s\n' "$C_GRY" "$C_RESET" "$(bar $((MU*100/MT)))" $((MU*100/MT)) "$C_DIM" "$MU" "$MT" "$C_RESET"
+  printf '   %sVRAM%s  %s  %3d%%   %s%s / %s MB%s\n' "$C_GRY" "$C_RESET" "$(bar $((VU*100/VT)))" $((VU*100/VT)) "$C_DIM" "$VU" "$VT" "$C_RESET"
+  printf '  '; hb
+  printf '   %sreq%s   activas %s%-2s%s · atendidas %s%-4s%s   %sgen%s %s%s t/s%s %sprompt %s t/s%s\n' \
+    "$C_GRY" "$C_RESET" "$C_B$C_YEL" "$M_ACT" "$C_RESET" "$C_B" "$SERVED" "$C_RESET" \
+    "$C_GRY" "$C_RESET" "$C_GRN" "$M_TPS" "$C_RESET" "$C_DIM" "$M_PPS" "$C_RESET"
+  printf '   %stok%s   prompt %s%s%s · generados %s%s%s\n' \
+    "$C_GRY" "$C_RESET" "$C_DIM" "$M_PROMPT" "$C_RESET" "$C_DIM" "$M_GEN" "$C_RESET"
+  if (( M_ACT > 0 )); then
+    printf '   %s%s generando%s  %s%s tokens%s  %sa %s t/s%s%-18s\n' \
+      "$C_YEL" "$SPIN" "$C_RESET" "$C_B$C_GRN" "${LIVE_N:-0}" "$C_RESET" \
+      "$C_GRY" "${LIVE_TG:-–}" "$C_RESET" ""
+  else
+    printf '   %s· en reposo%s%-46s\n' "$C_DIM" "$C_RESET" ""
+  fi
+  printf '   %sred%s   %s%-56.56s%s\n' "$C_GRY" "$C_RESET" "$C_CYA" \
+    "${CLIENTS:-sin clientes conectados}" "$C_RESET"
+  printf '  '; hb
+  grep -E '^[0-9]+\.[0-9]' "$LOG" 2>/dev/null | sed 's/^[0-9.]* [A-Z] //' \
+    | uniq | tail -n 6 | cut -c1-66 | sed "s/^/   ${C_GRY}/;s/\$/${C_RESET}/"
+  printf '\n  %s%s para apagar el modelo y liberar la memoria%s\033[J' \
+    "$C_DIM" "${EXIT_HINT:-Ctrl+C}" "$C_RESET"
+  } 2>/dev/null
+
+  sleep 1
+done
