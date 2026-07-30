@@ -77,6 +77,28 @@ denso, y el Gemma 4 E4B casi iguala a gpt-oss ocupando un tercio. Y **Bonsai 27B
 comprimido, es el mas lento**: sus kernels ternarios en Vulkan rinden peor que los formatos
 comunes.
 
+### Contexto por defecto
+
+No es el maximo de cada modelo sino lo que cabe con margen, medido cargando cada uno:
+
+| Modelo | Contexto | VRAM | % del carveout (16.4 GB) |
+|---|---|---|---|
+| Gemma 4 E4B | 128K | 6.4 GB | 39% |
+| Gemma 4 12B | 128K | 10.1 GB | 61% |
+| Qwen A1 4B | 128K | 9.6 GB | 59% |
+| Bonsai 27B | 146K | 13.2 GB | 81% |
+| gpt-oss 20B | 64K | 13.3 GB | 81% |
+| Gemma 4 26B-A4B | 32K | 15.2 GB | 94% |
+
+Los dos ultimos estan limitados por sus pesos, no por capricho: gpt-oss admite 128K pero
+ahi sube al 90%, y el 26B ya va al 94% con solo 32K. Se puede forzar cualquiera con
+`LLM_CTX=131072`, midiendo antes.
+
+En esta maquina el techo real es el **carveout de 16 GB** que reserva la BIOS: lo que
+quepa ahi no le quita nada al sistema. Vulkan puede direccionar 24 GB (carveout + GTT) y
+subiendo `amdgpu.gttsize` llegaria a 28, pero el GTT sale de los 15.7 GB que ve Linux, asi
+que no es memoria extra: es quitarsela al escritorio.
+
 ### Decodificacion especulativa: tres fracasos y un acierto
 
 | Metodo | Modelo | Resultado |

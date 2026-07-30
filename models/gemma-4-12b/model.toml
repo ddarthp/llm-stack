@@ -7,7 +7,8 @@ order = 5
 model = "model.gguf"
 mmproj = "mmproj.gguf"
 mtp = "mtp.gguf"
-ctx = 32768
+# 128K. Medido: 10091 MiB de VRAM, el 61% del carveout.
+ctx = 131072
 min_size = 6000000000
 runtime = "llamacpp"
 

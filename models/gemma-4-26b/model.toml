@@ -13,6 +13,7 @@ model = "model.gguf"
 mmproj = "mmproj.gguf"
 mtp = "mtp.gguf"
 mtp_on = true
+# 32K y no mas: este modelo ya ocupa el 94% del carveout bajo carga.
 ctx = 32768
 min_size = 12000000000
 runtime = "llamacpp"

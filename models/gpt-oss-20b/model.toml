@@ -8,7 +8,9 @@ note = "El mas rapido generando pese a su tamano: pocos expertos activos por tok
 order = 1
 
 model = "gpt-oss-20b-MXFP4.gguf"
-ctx = 32768
+# 64K: medido 13310 MiB (81%). Su maximo son 128K, que caben
+# pero al 90% del carveout; si los necesitas: LLM_CTX=131072.
+ctx = 65536
 min_size = 11000000000
 runtime = "llamacpp"
 think = "max"
