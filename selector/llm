@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+"""llm — selector de modelo local. Un solo icono, un solo puerto.
+
+Muestra un menu, arranca el modelo elegido en el puerto unificado y, al pararlo,
+vuelve al menu. Pensado para funcionar en Modo Juego sin teclado:
+
+  - mando   : cruceta / stick para moverse, A para elegir, B para salir
+  - teclado : flechas o W/S, numeros, Enter, Q
+  - sin nada: cuenta atras y arranca el ultimo modelo usado
+
+El puerto es el mismo para todos los modelos, asi los clientes (opencode, movil...)
+no tienen que cambiar de configuracion segun cual este cargado.
+"""
+import os
+import select
+import signal
+import struct
+import subprocess
+import sys
+import termios
+import time
+import tty
+
+ROOT = "/home/deck/llm"
+STATE = os.path.join(ROOT, "last")
+PORT = os.environ.get("LLM_PORT", "8090")
+AUTOSTART = int(os.environ.get("LLM_AUTOSTART", "15"))  # segundos; 0 = sin cuenta atras
+
+MODELS = [
+    {
+        "key": "qwen",
+        "name": "Qwen A1 4B",
+        "sub": "Agents-A1-4B Q8_0 · agente de programacion",
+        "specs": "16.6 tok/s · prefill 250 tok/s · 9.6 GB",
+        "note": "El mas rapido. Mejor para opencode y uso con herramientas.",
+        "cmd": ["/home/deck/qwen-a1/qwen"],
+        "env": {"QWEN_PORT": PORT},
+    },
+    {
+        "key": "bonsai",
+        "name": "Bonsai 27B",
+        "sub": "Ternary Q2_0 · vision · 150K de contexto",
+        "specs": "4.5 tok/s · prefill 44 tok/s · 10.7 GB",
+        "note": "Mas lento pero mas rico. Acepta imagenes.",
+        "cmd": ["/home/deck/bonsai/bonsai"],
+        "env": {"BONSAI_PORT": PORT},
+    },
+]
+
+R = "\033[0m"; B = "\033[1m"; D = "\033[2m"
+GRN = "\033[38;5;77m"; YEL = "\033[38;5;221m"; RED = "\033[38;5;203m"
+CYA = "\033[38;5;80m"; MAG = "\033[38;5;176m"; GRY = "\033[38;5;244m"
+
+
+# ── entrada por mando ──────────────────────────────────────────────────────
+class Pads:
+    """Lee todos los /dev/input/js* que se puedan abrir.
+
+    En Modo Juego el mando fisico suele estar bajo ACL de sesion, pero Steam
+    expone un mando virtual legible; por eso se intentan todos y no uno fijo.
+    """
+
+    def __init__(self):
+        self.fds = []
+        for n in range(8):
+            p = f"/dev/input/js{n}"
+            try:
+                self.fds.append(os.open(p, os.O_RDONLY | os.O_NONBLOCK))
+            except OSError:
+                pass
+        self._last_axis = 0.0
+
+    def poll(self):
+        """Devuelve 'up' | 'down' | 'ok' | 'back' | None."""
+        if not self.fds:
+            return None
+        r, _, _ = select.select(self.fds, [], [], 0)
+        for fd in r:
+            while True:
+                try:
+                    data = os.read(fd, 8)
+                except (BlockingIOError, OSError):
+                    break
+                if len(data) != 8:
+                    break
+                _, val, typ, num = struct.unpack("<IhBB", data)
+                if typ & 0x80:          # eventos sinteticos de inicializacion
+                    continue
+                if typ & 0x01:          # boton
+                    if val == 1 and num in (0,):      # A
+                        return "ok"
+                    if val == 1 and num in (1,):      # B
+                        return "back"
+                elif typ & 0x02:        # eje: cruceta (6/7) o stick izquierdo (1)
+                    if num in (1, 7) and abs(val) > 16000:
+                        now = time.time()
+                        if now - self._last_axis < 0.25:
+                            continue
+                        self._last_axis = now
+                        return "up" if val < 0 else "down"
+        return None
+
+    def close(self):
+        for fd in self.fds:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def read_key(timeout):
+    """Lee una tecla de stdin sin bloquear mas de `timeout` segundos."""
+    r, _, _ = select.select([sys.stdin], [], [], timeout)
+    if not r:
+        return None
+    ch = sys.stdin.read(1)
+    if ch == "\x1b":                      # secuencia de flecha
+        r, _, _ = select.select([sys.stdin], [], [], 0.05)
+        if r:
+            rest = sys.stdin.read(2)
+            return {"[A": "up", "[B": "down"}.get(rest)
+        return "back"
+    low = ch.lower()
+    if low in ("w", "k"):
+        return "up"
+    if low in ("s", "j"):
+        return "down"
+    if ch in ("\r", "\n", " "):
+        return "ok"
+    if low == "q":
+        return "back"
+    if ch.isdigit():
+        return f"#{ch}"
+    return None
+
+
+# ── pintado ────────────────────────────────────────────────────────────────
+def draw(sel, remaining, pads_ok, busy):
+    out = ["\033[H\033[J"]
+    a = out.append
+    a(f"\n  {B}{MAG}MODELOS LOCALES{R}   {D}puerto {PORT} para todos{R}\n")
+    a(f"  {GRY}{'─' * 66}{R}\n")
+    for i, m in enumerate(MODELS):
+        cur = i == sel
+        bullet = f"{GRN}▸{R}" if cur else " "
+        name = f"{B}{CYA}{m['name']}{R}" if cur else f"{GRY}{m['name']}{R}"
+        a(f"\n   {bullet} {name}   {D}{m['specs']}{R}\n")
+        a(f"     {D}{m['sub']}{R}\n")
+        if cur:
+            a(f"     {GRY}{m['note']}{R}\n")
+    a(f"\n  {GRY}{'─' * 66}{R}\n")
+    if busy:
+        a(f"\n  {RED}El puerto {PORT} ya esta ocupado por otro proceso.{R}\n")
+    elif remaining is not None:
+        a(f"\n  {YEL}Arrancando {MODELS[sel]['name']} en {remaining}s…{R}"
+          f"  {D}(pulsa algo para elegir){R}\n")
+    else:
+        a("\n")
+    ctrl = "cruceta  A elegir  B salir" if pads_ok else "flechas  Enter elegir  Q salir"
+    if os.environ.get("LLM_EXIT_HINT"):
+        ctrl += f"   ·   salir del todo: {os.environ['LLM_EXIT_HINT']}"
+    a(f"  {D}{ctrl}{R}\033[J")
+    sys.stdout.write("".join(out))
+    sys.stdout.flush()
+
+
+def port_busy():
+    try:
+        out = subprocess.run(["ss", "-tln"], capture_output=True, text=True, timeout=3).stdout
+        return f":{PORT}" in out
+    except Exception:
+        return False
+
+
+def run_model(m):
+    """Arranca el modelo y espera. Devuelve cuando el usuario lo para."""
+    os.system("clear")
+    env = dict(os.environ)
+    env.update(m["env"])
+    # Cada lanzador lee su propia variable para la pista de salida; en Modo Juego
+    # no hay Ctrl+C y hay que indicar la via de Steam.
+    hint = os.environ.get("LLM_EXIT_HINT")
+    if hint:
+        env["BONSAI_EXIT_HINT"] = hint
+        env["QWEN_EXIT_HINT"] = hint
+    # El hijo debe recibir Ctrl+C del terminal; el menu lo ignora mientras tanto.
+    prev = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    child = subprocess.Popen(m["cmd"], env=env)
+
+    def forward(signum, frame):
+        try:
+            child.terminate()
+        except Exception:
+            pass
+
+    prev_term = signal.signal(signal.SIGTERM, forward)
+    prev_hup = signal.signal(signal.SIGHUP, forward)
+    try:
+        child.wait()
+    finally:
+        signal.signal(signal.SIGINT, prev)
+        signal.signal(signal.SIGTERM, prev_term)
+        signal.signal(signal.SIGHUP, prev_hup)
+
+
+def main():
+    sel = 0
+    if os.path.exists(STATE):
+        try:
+            last = open(STATE).read().strip()
+            sel = next((i for i, m in enumerate(MODELS) if m["key"] == last), 0)
+        except Exception:
+            pass
+
+    pads = Pads()
+    fd = sys.stdin.fileno()
+    try:
+        old = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
+        raw_ok = True
+    except termios.error:
+        old = None
+        raw_ok = False
+
+    sys.stdout.write("\033[?25l")
+    deadline = time.time() + AUTOSTART if AUTOSTART > 0 else None
+    try:
+        while True:
+            busy = port_busy()
+            remaining = None
+            if deadline and not busy:
+                remaining = max(0, int(deadline - time.time()))
+                if remaining == 0:
+                    draw(sel, None, bool(pads.fds), busy)
+                    run_model(MODELS[sel])
+                    deadline = None
+                    continue
+            draw(sel, remaining, bool(pads.fds), busy)
+
+            ev = pads.poll()
+            if ev is None and raw_ok:
+                ev = read_key(0.15)
+            elif ev is None:
+                time.sleep(0.15)
+
+            if ev is None:
+                continue
+            deadline = None                      # cualquier entrada cancela la cuenta atras
+            if ev == "up":
+                sel = (sel - 1) % len(MODELS)
+            elif ev == "down":
+                sel = (sel + 1) % len(MODELS)
+            elif ev and ev.startswith("#"):
+                i = int(ev[1:]) - 1
+                if 0 <= i < len(MODELS):
+                    sel = i
+                    ev = "ok"
+            if ev == "ok":
+                if busy:
+                    continue
+                try:
+                    open(STATE, "w").write(MODELS[sel]["key"])
+                except Exception:
+                    pass
+                run_model(MODELS[sel])
+            elif ev == "back":
+                break
+    finally:
+        sys.stdout.write("\033[?25h\n")
+        if old is not None:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        pads.close()
+
+
+if __name__ == "__main__":
+    main()

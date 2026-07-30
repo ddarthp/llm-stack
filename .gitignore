@@ -1,0 +1,23 @@
+# Pesos de los modelos: gigabytes, se descargan aparte
+*.gguf
+models/**/models/
+
+# Binarios de llama.cpp: dependen del sistema y del backend
+bin/
+**/bin/
+
+# Estado local de la maquina
+logs/
+*.log
+apikey
+last
+*.bak
+*.bak-*
+
+# Sistema
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+.venv/
+venv/

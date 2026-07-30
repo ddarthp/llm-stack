@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# llm-steam — arranca el selector de modelos en una terminal a pantalla completa, pensado para
+# lanzarse desde Steam (Modo Juego / handheld). Salir del juego desde Steam mata todo.
+#
+# Ajustes opcionales:
+#   LLM_FONT_SIZE=28   tamano de letra (por defecto 24)
+#   LLM_TERM=xterm     forzar xterm en vez de konsole
+
+set -uo pipefail
+ROOT="/home/deck/llm"
+FONT_SIZE="${LLM_FONT_SIZE:-24}"
+
+# Steam inyecta su overlay por LD_PRELOAD con la ruta de 32 bits incluida. Cada
+# proceso que arranquemos escupiria entonces:
+#   ERROR: ld.so: object '.../ubuntu12_32/gameoverlayrenderer.so' ... ELFCLASS32
+# y la version de 64 bits protesta en cada fork con "skipping destruction".
+# El panel lanza muchos subprocesos, asi que eso inunda la terminal. En una app
+# de texto el overlay no aporta nada, asi que fuera.
+unset LD_PRELOAD
+export SteamOverlayGameId=  2>/dev/null || true
+unset SteamOverlayGameId
+
+# Con Steam el proceso recibe SIGTERM al pulsar "Salir del juego": hay que
+# propagarlo a la terminal y al servidor, o el modelo se queda cargado en memoria.
+CHILD=""
+cleanup() {
+  trap - EXIT INT TERM HUP
+  [ -n "$CHILD" ] && kill -TERM "$CHILD" 2>/dev/null
+  for _ in $(seq 1 40); do pgrep -x llama-server >/dev/null || break; sleep 0.25; done
+  pkill -x llama-server 2>/dev/null
+  exit 0
+}
+trap cleanup EXIT INT TERM HUP
+
+# En Modo Juego no hay teclado fisico: sin Ctrl+C, se sale desde el menu de Steam.
+# El panel lo indica con esta variable.
+export LLM_EXIT_HINT="Menu de Steam → Salir del juego"
+
+# xterm por defecto en Modo Juego: no tiene barra de herramientas ni de pestanas,
+# que Konsole si muestra y no se pueden ocultar por linea de ordenes.
+TERM_BIN="${LLM_TERM:-xterm}"
+command -v "$TERM_BIN" >/dev/null 2>&1 || TERM_BIN=xterm
+
+launch_xterm() {
+  local fs=(-fullscreen); [ "${LLM_FULLSCREEN:-1}" = 0 ] && fs=(-geometry 100x30)
+  xterm -fa Hack -fs "$FONT_SIZE" "${fs[@]}" -bg '#0d2417' -fg '#eafff2' \
+        -title "Modelos locales" -e "$ROOT/llm" &
+  CHILD=$!
+}
+
+if [ "$TERM_BIN" = konsole ]; then
+  # El perfil Bonsai fija la tipografia grande; el tamano se puede sobrescribir.
+  # Se reescribe SIEMPRE a partir de FONT_SIZE (24 por defecto), para que una
+  # ejecucion puntual con otro tamano no deje el perfil cambiado para siempre.
+  PROFILE="$HOME/.local/share/konsole/Bonsai.profile"
+  [ -f "$PROFILE" ] && sed -i "s/^Font=Hack,[0-9]*/Font=Hack,$FONT_SIZE/" "$PROFILE"
+  FS=(--fullscreen); [ "${LLM_FULLSCREEN:-1}" = 0 ] && FS=()
+  konsole --nofork "${FS[@]}" --hide-menubar --hide-tabbar \
+          --profile Bonsai --workdir "$ROOT" \
+          -e "$ROOT/llm" &
+  CHILD=$!
+  # En la sesion de gamescope las apps de KDE pueden no arrancar. Si konsole se
+  # cae en los primeros segundos, se reintenta con xterm en vez de dejar a Steam
+  # con un "juego" que se cierra solo.
+  sleep 5
+  if ! kill -0 "$CHILD" 2>/dev/null; then
+    pkill -x llama-server 2>/dev/null
+    launch_xterm
+  fi
+else
+  launch_xterm
+fi
+
+wait "$CHILD"

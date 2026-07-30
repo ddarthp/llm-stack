@@ -1,0 +1,4 @@
+# Permite al usuario deck subir y bajar el TDP/governor sin contraseña,
+# unicamente a traves de /etc/bonsai-power (root:root 755, no editable por deck).
+# Instalar en /etc/sudoers.d/bonsai-power con permisos 440.
+deck ALL=(root) NOPASSWD: /etc/bonsai-power boost, /etc/bonsai-power boost [0-9]*, /etc/bonsai-power restore, /etc/bonsai-power status

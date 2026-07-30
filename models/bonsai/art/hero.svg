@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="620" viewBox="0 0 1920 620"><defs><linearGradient id="g" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0%" stop-color="#163d23"/><stop offset="55%" stop-color="#0d2417"/><stop offset="100%" stop-color="#07120c"/></linearGradient></defs><rect width="1920" height="620" fill="url(#g)"/><g transform="translate(472.0,157.5) scale(19.0000)"><path d="M15.1304 6.25864H12L14.087 10.4311L6.78261 14.6035H16.1739L20.3478 10.4311L15.1304 6.25864Z" fill="#eafff2"/>
+<path d="M16.7826 6.25866H24V8.34488H19.4022L16.7826 6.25866Z" fill="#eafff2"/>
+<path d="M0 6.25866H10.837L11.8804 8.34488H0V6.25866Z" fill="#eafff2"/>
+<path d="M5.21739 3.12933H20.8696V5.21555H5.21739V3.12933Z" fill="#eafff2"/>
+<path d="M10.4348 0H17.7391V2.08622H10.4348V0Z" fill="#eafff2"/></g><text x="980" y="285" font-family="Hack,DejaVu Sans Mono" font-size="104" font-weight="bold" fill="#eafff2" letter-spacing="3">BONSAI 27B</text><text x="986" y="360" font-family="DejaVu Sans" font-size="34" fill="#7d9b88" letter-spacing="5">MODELO DE LENGUAJE EN LOCAL</text></svg>

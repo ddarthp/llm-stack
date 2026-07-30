@@ -1,0 +1,111 @@
+Explícame como si tuviera quince años por qué el cielo es azul y por qué al atardecer se pone rojo.
+La dispersión de Rayleigh depende de la cuarta potencia inversa de la longitud de onda, así que la luz azul se dispersa mucho más que la roja al atravesar la atmósfera.
+¿Cuál es la diferencia entre memoria unificada y memoria dedicada en una APU? ¿Afecta al rendimiento de inferencia?
+En una APU la GPU y la CPU comparten el mismo ancho de banda de memoria, así que un modelo grande queda limitado por la velocidad de la RAM y no por el cómputo.
+
+Resume este texto en tres frases, manteniendo los datos numéricos.
+Traduce al inglés el siguiente párrafo respetando el tono técnico.
+Hazme una lista de la compra para una semana de comidas vegetarianas para dos personas.
+Necesito un correo formal para pedir una prórroga de dos semanas en la entrega de un informe.
+¿Qué juegos de PS2 corren bien en una consola portátil con una Z1 Extreme?
+Compara brevemente las ventajas y desventajas de usar Vulkan frente a ROCm en Linux para inferencia local.
+
+def cargar_modelo(ruta: str, capas_gpu: int = 99) -> Modelo:
+    """Carga un GGUF y descarga todas las capas posibles a la GPU."""
+    if not os.path.exists(ruta):
+        raise FileNotFoundError(f"no encuentro el modelo: {ruta}")
+    return Modelo(ruta, n_gpu_layers=capas_gpu, n_ctx=32768)
+
+async function obtenerRespuesta(mensaje) {
+  const r = await fetch(`${BASE}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_KEY}` },
+    body: JSON.stringify({ model: 'bonsai', messages: [{ role: 'user', content: mensaje }] }),
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return (await r.json()).choices[0].message.content;
+}
+
+SELECT u.nombre, COUNT(p.id) AS pedidos
+FROM usuarios u LEFT JOIN pedidos p ON p.usuario_id = u.id
+WHERE u.creado_en >= '2026-01-01'
+GROUP BY u.nombre HAVING COUNT(p.id) > 3
+ORDER BY pedidos DESC LIMIT 20;
+
+#include <stdio.h>
+int main(void) {
+    for (int i = 0; i < 10; i++) printf("%d\n", i * i);
+    return 0;
+}
+
+src/red/cliente.py:44: TIEMPO_ESPERA = 30
+ERROR: no se pudo reservar el buffer de cómputo, memoria insuficiente en el dispositivo
+WARN: n_ctx_seq (32768) < n_ctx_train (262144) -- no se aprovecha toda la capacidad del modelo
+git rebase -i HEAD~3 && git push --force-with-lease origin rama-de-trabajo
+docker compose up -d --build && docker compose logs -f api
+systemctl --user status servidor.service | grep -E "Active|Memory"
+
+Revisa este fragmento y dime si tiene una condición de carrera:
+El problema aparece cuando dos hilos escriben en el mismo mapa sin sincronización, porque el redimensionado interno puede ocurrir a la vez que una lectura.
+Para arreglarlo puedes usar un mutex de lectura y escritura, o una estructura concurrente ya preparada para ello.
+
+¿Puedes analizar esta captura de pantalla y decirme qué error muestra?
+Describe la imagen que te acabo de enviar, con atención al texto pequeño que aparece en la esquina inferior.
+En la foto se ve un diagrama de flujo con cuatro cajas conectadas por flechas, y una nota manuscrita al margen.
+
+Piensa paso a paso antes de responder. Primero identifica qué se pregunta, después qué datos tienes, y solo entonces da la conclusión.
+Si no estás seguro de algo, dilo explícitamente en vez de inventar una respuesta plausible.
+Cuando cites números, indica de dónde salen y con qué método se midieron.
+
+The quick brown fox jumps over the lazy dog while the maintainer reviews the pull request.
+Given a sorted array, implement binary search and explain its time complexity in the worst case.
+The context window determines how much conversation history the model can attend to at once.
+Rendimiento medido: 4.5 tokens por segundo en generación y 45 tokens por segundo en el prefill.
+
+Tengo una consola portátil con 32 GB de RAM pero la BIOS reserva 16 GB para la gráfica integrada. ¿Me compensa cambiarlo a automático?
+Depende de para qué la uses. Si vas a cargar modelos grandes en la GPU, la reserva fija te garantiza ese espacio; si prefieres tener RAM libre para juegos y navegador, el modo automático reparte según haga falta.
+En Linux el controlador amdgpu puede pedir memoria adicional al sistema mediante GTT, y ese límite se ajusta con un parámetro de arranque del kernel.
+
+¿Cómo configuro un servidor local para que acepte conexiones desde otros equipos de mi red?
+Tienes que hacer que escuche en todas las interfaces en lugar de solo en localhost, y después comprobar que el cortafuegos permite el puerto elegido.
+Si el router tiene aislamiento de clientes activado, los dispositivos no se ven entre sí aunque el cortafuegos esté abierto.
+Comprueba primero con un ping y después con una petición al puerto concreto, así distingues un problema de red de uno de aplicación.
+
+Escribe una función que reciba una lista de números y devuelva la mediana sin usar librerías externas.
+def mediana(valores):
+    if not valores:
+        raise ValueError("la lista está vacía")
+    orden = sorted(valores)
+    mitad = len(orden) // 2
+    if len(orden) % 2:
+        return orden[mitad]
+    return (orden[mitad - 1] + orden[mitad]) / 2
+
+Refactoriza esto para que sea más legible y añade manejo de errores.
+type Resultado<T> = { ok: true; valor: T } | { ok: false; error: string };
+
+function dividir(a: number, b: number): Resultado<number> {
+  if (b === 0) return { ok: false, error: "división por cero" };
+  return { ok: true, valor: a / b };
+}
+
+Explica la diferencia entre un mutex y un semáforo, con un ejemplo de cuándo usar cada uno.
+Un mutex protege una sección crítica y solo lo puede liberar quien lo tomó; un semáforo cuenta recursos disponibles y cualquiera puede señalarlo.
+Usa un mutex cuando protejas una estructura compartida y un semáforo cuando limites cuántas tareas acceden a la vez a un recurso.
+
+¿Qué significa que un modelo sea cuantizado a 2 bits y qué pierde respecto al original?
+Cada peso se representa con muchos menos bits, así que el modelo ocupa una fracción del espacio y se lee mucho más rápido de memoria.
+A cambio se introduce error de redondeo en cada peso, que se nota sobre todo en tareas de precisión como matemáticas o código muy específico.
+Las técnicas modernas agrupan los pesos en bloques con su propio factor de escala, lo que recupera buena parte de la calidad perdida.
+
+Dame ideas para un fin de semana en la montaña con niños pequeños, con presupuesto ajustado.
+Necesito organizar mis fotos por fecha y lugar, ¿qué me recomiendas que sea sencillo y funcione sin conexión?
+Corrige la ortografía y la puntuación del siguiente texto sin cambiar el estilo del autor.
+Convierte esta tabla en formato JSON, usando los encabezados como claves.
+Analiza este registro de errores y dime cuál es la causa raíz más probable.
+
+Write a shell script that rotates log files older than seven days and compresses them.
+Explain the trade-offs between eventual consistency and strong consistency in distributed databases.
+Summarize the following article, keeping every figure and date exactly as written.
+The measurement showed 45.8 tokens per second for prefill and 4.5 tokens per second for generation on an integrated GPU.
+Refactor the loop below so it short-circuits as soon as a match is found instead of scanning the whole array.

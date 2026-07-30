@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Anade (o actualiza) un acceso directo no-Steam en shortcuts.vdf, con su arte.
+
+Uso:
+  steam-add --name "Firefox" --exe /usr/bin/flatpak \
+            --args "run org.mozilla.firefox" \
+            --icon /ruta/icono.png \
+            --art-portrait p.png --art-hero hero.png --art-wide wide.png --art-logo logo.png
+
+Steam debe estar CERRADO: si esta abierto, reescribe shortcuts.vdf al salir y se
+perderia lo anadido. El script se niega a ejecutarse en ese caso.
+Siempre deja una copia de seguridad junto al fichero original.
+"""
+import argparse
+import binascii
+import glob
+import os
+import shutil
+import struct
+import subprocess
+import sys
+import time
+
+
+# ── VDF binario ────────────────────────────────────────────────────────────
+def _cstr(b, i):
+    j = b.index(b"\x00", i)
+    return b[i:j].decode("utf-8", "replace"), j + 1
+
+
+def vdf_parse(b, i=0):
+    out = []
+    while i < len(b):
+        t = b[i]
+        i += 1
+        if t == 0x08:
+            return out, i
+        key, i = _cstr(b, i)
+        if t == 0x00:
+            val, i = vdf_parse(b, i)
+        elif t == 0x01:
+            val, i = _cstr(b, i)
+        elif t == 0x02:
+            val = struct.unpack_from("<i", b, i)[0]
+            i += 4
+        else:
+            raise ValueError(f"tipo VDF desconocido {t:#x} en offset {i}")
+        out.append((t, key, val))
+    return out, i
+
+
+def vdf_dump(pairs):
+    out = bytearray()
+    for t, key, val in pairs:
+        out.append(t)
+        out += key.encode("utf-8") + b"\x00"
+        if t == 0x00:
+            out += vdf_dump(val)
+        elif t == 0x01:
+            out += val.encode("utf-8") + b"\x00"
+        elif t == 0x02:
+            out += struct.pack("<i", val)
+    out.append(0x08)
+    return bytes(out)
+
+
+# ── logica ─────────────────────────────────────────────────────────────────
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--name", required=True)
+    ap.add_argument("--remove", action="store_true",
+                    help="elimina el atajo con ese nombre en vez de anadirlo")
+    ap.add_argument("--exe", default="")
+    ap.add_argument("--args", default="")
+    ap.add_argument("--startdir", default=None)
+    ap.add_argument("--icon", default="")
+    ap.add_argument("--art-portrait")
+    ap.add_argument("--art-hero")
+    ap.add_argument("--art-wide")
+    ap.add_argument("--art-logo")
+    a = ap.parse_args()
+
+    if subprocess.run(["pgrep", "-x", "steam"], capture_output=True).returncode == 0:
+        sys.exit("Steam esta abierto: cierralo antes o reescribira shortcuts.vdf al salir.")
+
+    paths = glob.glob(os.path.expanduser("~/.steam/steam/userdata/*/config/shortcuts.vdf"))
+    if not paths:
+        sys.exit("no encuentro shortcuts.vdf")
+    path = paths[0]
+
+    raw = open(path, "rb").read()
+    pairs, _ = vdf_parse(raw)
+    if vdf_dump(pairs) != raw:
+        sys.exit("el round-trip del VDF no coincide: no toco el fichero por seguridad")
+
+    sc = [v for _, k, v in pairs if k.lower() == "shortcuts"][0]
+
+    def guardar(msg):
+        backup = path + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
+        shutil.copy2(path, backup)
+        open(path, "wb").write(vdf_dump(pairs))
+        print(msg)
+        print(f"  backup : {backup}")
+        print(f"  atajos : {len(sc)}")
+
+    if a.remove:
+        antes = len(sc)
+        sc[:] = [it for it in sc
+                 if {k.lower(): v for _, k, v in it[2]
+                     if not isinstance(v, list)}.get("appname") != a.name]
+        if len(sc) == antes:
+            sys.exit(f"no encuentro ningun atajo llamado {a.name!r}")
+        # Steam usa las claves del mapa como indice: hay que renumerarlas.
+        sc[:] = [(t, str(i), e) for i, (t, _, e) in enumerate(sc)]
+        guardar(f"eliminado: {a.name}")
+        return
+
+    if not a.exe:
+        sys.exit("--exe es obligatorio salvo con --remove")
+
+    exe = f'"{a.exe}"'
+    startdir = f'"{a.startdir or os.path.dirname(a.exe) + "/"}"'
+    icon = f'"{a.icon}"' if a.icon else ""
+
+    # Steam calcula el appid de los atajos como crc32(exe+nombre) con el bit alto.
+    crc = binascii.crc32((exe + a.name).encode("utf-8")) & 0xFFFFFFFF
+    appid_u = crc | 0x80000000
+    appid_s = appid_u - 0x100000000
+
+    existing = None
+    for item in sc:
+        d = {k.lower(): v for _, k, v in item[2] if not isinstance(v, list)}
+        if d.get("appname") == a.name:
+            existing = item
+            break
+
+    entry = [
+        (0x02, "appid", appid_s),
+        (0x01, "appname", a.name),
+        (0x01, "exe", exe),
+        (0x01, "StartDir", startdir),
+        (0x01, "icon", icon),
+        (0x01, "ShortcutPath", ""),
+        (0x01, "LaunchOptions", a.args),
+        (0x02, "IsHidden", 0),
+        (0x02, "AllowDesktopConfig", 1),
+        (0x02, "AllowOverlay", 1),
+        (0x02, "OpenVR", 0),
+        (0x02, "Devkit", 0),
+        (0x01, "DevkitGameID", ""),
+        (0x02, "DevkitOverrideAppID", 0),
+        (0x02, "LastPlayTime", 0),
+        (0x01, "FlatpakAppID", ""),
+        (0x01, "sortas", ""),
+        (0x00, "tags", []),
+    ]
+
+    if existing:
+        sc[sc.index(existing)] = (0x00, existing[1], entry)
+        accion = "actualizado"
+    else:
+        sc.append((0x00, str(len(sc)), entry))
+        accion = "anadido"
+
+    backup = path + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
+    shutil.copy2(path, backup)
+    open(path, "wb").write(vdf_dump(pairs))
+
+    # Arte de biblioteca: los nombres los espera Steam con el appid sin signo.
+    grid = os.path.join(os.path.dirname(path), "grid")
+    os.makedirs(grid, exist_ok=True)
+    for src, dst in (
+        (a.art_portrait, f"{appid_u}p.png"),
+        (a.art_hero, f"{appid_u}_hero.png"),
+        (a.art_wide, f"{appid_u}.png"),
+        (a.art_logo, f"{appid_u}_logo.png"),
+        (a.icon, f"{appid_u}_icon.png"),
+    ):
+        if src and os.path.isfile(src):
+            shutil.copy2(src, os.path.join(grid, dst))
+
+    print(f"{accion}: {a.name}")
+    print(f"  exe    : {exe} {a.args}")
+    print(f"  appid  : {appid_u}")
+    print(f"  backup : {backup}")
+    print(f"  atajos : {len(sc)}")
+
+
+if __name__ == "__main__":
+    main()

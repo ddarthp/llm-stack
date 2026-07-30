@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "local": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Modelos locales",
+      "options": {
+        "baseURL": "http://TU-IP-LOCAL:8090/v1",
+        "apiKey": "PON-AQUI-TU-CLAVE"
+      },
+      "models": {
+        "local": {
+          "name": "El que este cargado (Qwen A1 o Bonsai)",
+          "tools": true,
+          "reasoning": true,
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        }
+      }
+    }
+  }
+}

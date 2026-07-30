@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# bonsai-power — sube la APU a tope mientras corre Bonsai, y lo deja como estaba al salir.
+# Se instala en /etc/bonsai-power (root:root 755) y se invoca por sudo desde el lanzador.
+#
+#   bonsai-power boost [vatios]   sube TDP + governor performance + GPU a maximo
+#   bonsai-power restore          devuelve todo a los valores previos
+#   bonsai-power status           muestra el estado actual
+#
+# Los valores previos se guardan en /run (volatil): si el equipo se apaga de golpe,
+# al reiniciar vuelven los defaults de la BIOS igualmente.
+
+set -u
+
+ATTR=/sys/class/firmware-attributes/lenovo-wmi-other-0/attributes
+GPU=/sys/class/drm/card0/device/power_dpm_force_performance_level
+STATE=/run/bonsai-power.state
+
+[ "$(id -u)" -eq 0 ] || { echo "bonsai-power: requiere root" >&2; exit 1; }
+
+rd() { cat "$1" 2>/dev/null; }
+wr() { [ -w "$1" ] && printf '%s' "$2" > "$1" 2>/dev/null; }
+
+get_tdp()  { rd "$ATTR/ppt_pl1_spl/current_value"; }
+get_gov()  { rd /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor; }
+get_epp()  { rd /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference; }
+
+set_gov() {
+  for c in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do wr "$c" "$1"; done
+}
+set_epp() {
+  for c in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do wr "$c" "$1"; done
+}
+
+case "${1:-status}" in
+  boost)
+    W="${2:-40}"
+    case "$W" in *[!0-9]*|"") echo "vatios invalidos: $W" >&2; exit 1 ;; esac
+    MAX=$(rd "$ATTR/ppt_pl1_spl/max_value"); MIN=$(rd "$ATTR/ppt_pl1_spl/min_value")
+    [ "$W" -gt "${MAX:-40}" ] && W=$MAX
+    [ "$W" -lt "${MIN:-5}" ]  && W=$MIN
+
+    # Guardar el estado previo solo la primera vez (no pisar si ya hay boost activo)
+    if [ ! -f "$STATE" ]; then
+      {
+        echo "TDP1=$(rd "$ATTR/ppt_pl1_spl/current_value")"
+        echo "TDP2=$(rd "$ATTR/ppt_pl2_sppt/current_value")"
+        echo "TDP3=$(rd "$ATTR/ppt_pl3_fppt/current_value")"
+        echo "GOV=$(get_gov)"
+        echo "EPP=$(get_epp)"
+        echo "DPM=$(rd "$GPU")"
+      } > "$STATE"
+    fi
+
+    # Subir de mayor a menor: pl3 >= pl2 >= pl1, o el firmware recorta
+    P3=$(rd "$ATTR/ppt_pl3_fppt/max_value"); P2=$(rd "$ATTR/ppt_pl2_sppt/max_value")
+    wr "$ATTR/ppt_pl3_fppt/current_value"  "${P3:-53}"
+    wr "$ATTR/ppt_pl2_sppt/current_value"  "${P2:-43}"
+    wr "$ATTR/ppt_pl1_spl/current_value"   "$W"
+    set_gov performance
+    set_epp performance
+    wr "$GPU" high
+    echo "boost: TDP ${W}W · governor performance · GPU high"
+    ;;
+
+  restore)
+    if [ -f "$STATE" ]; then
+      . "$STATE"
+      wr "$ATTR/ppt_pl1_spl/current_value"  "${TDP1:-15}"
+      wr "$ATTR/ppt_pl2_sppt/current_value" "${TDP2:-15}"
+      wr "$ATTR/ppt_pl3_fppt/current_value" "${TDP3:-15}"
+      set_gov "${GOV:-powersave}"
+      set_epp "${EPP:-balance_performance}"
+      wr "$GPU" "${DPM:-auto}"
+      rm -f "$STATE"
+      echo "restaurado: TDP ${TDP1:-15}W · governor ${GOV:-powersave} · GPU ${DPM:-auto}"
+    else
+      echo "no habia boost activo, nada que restaurar"
+    fi
+    ;;
+
+  status)
+    printf 'TDP  pl1=%sW pl2=%sW pl3=%sW\n' \
+      "$(rd "$ATTR/ppt_pl1_spl/current_value")" \
+      "$(rd "$ATTR/ppt_pl2_sppt/current_value")" \
+      "$(rd "$ATTR/ppt_pl3_fppt/current_value")"
+    printf 'CPU  governor=%s epp=%s\n' "$(get_gov)" "$(get_epp)"
+    printf 'GPU  dpm=%s\n' "$(rd "$GPU")"
+    [ -f "$STATE" ] && echo "boost ACTIVO (estado previo guardado)" || echo "boost inactivo"
+    ;;
+
+  *) echo "uso: bonsai-power {boost [vatios]|restore|status}" >&2; exit 1 ;;
+esac
